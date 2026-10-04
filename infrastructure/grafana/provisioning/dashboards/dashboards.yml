@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: 'Courssat Academy'
+    orgId: 1
+    folder: 'Courssat'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

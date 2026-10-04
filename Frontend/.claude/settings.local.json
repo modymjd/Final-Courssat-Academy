@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(python \"C:/Users/repair/Desktop/ui-ux-pro-max-skill-main/src/ui-ux-pro-max/scripts/search.py\" \"dashboard analytics\" --domain ux -n 5)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

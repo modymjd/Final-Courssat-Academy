@@ -1,0 +1,98 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    name: Production Quality Gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_courssat
+          POSTGRES_USER: courssat
+          POSTGRES_PASSWORD: testpass
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U courssat -d test_courssat" --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7.2-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install backend dependencies
+        run: pip install -r Backend/requirements.txt
+
+      - name: Backend lint
+        run: cd Backend && ruff check .
+
+      - name: Backend type check
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+        run: cd Backend && mypy . --ignore-missing-imports
+
+      - name: Backend tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          DB_NAME: test_courssat
+          DB_USER: courssat
+          DB_PASSWORD: testpass
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          REDIS_URL: redis://localhost:6379/0
+          CELERY_BROKER_URL: redis://localhost:6379/1
+          CELERY_RESULT_BACKEND: redis://localhost:6379/2
+          CELERY_TASK_ALWAYS_EAGER: 'True'
+        run: cd Backend && python manage.py test --verbosity 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: Frontend
+
+      - name: Frontend verification
+        run: npm run verify
+        working-directory: Frontend
+
+  deploy:
+    name: Deploy
+    needs: [quality-gate]
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /home/deployer/courssat
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+            chmod +x scripts/deploy.sh
+            APP_DIR=/home/deployer/courssat ./scripts/deploy.sh

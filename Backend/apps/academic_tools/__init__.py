@@ -1,0 +1,1 @@
+# Academic Tools app initialization

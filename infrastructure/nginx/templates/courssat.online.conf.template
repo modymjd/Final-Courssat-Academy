@@ -1,0 +1,235 @@
+# ============================================================================
+# Courssat Academy (courssat.online) — Production Nginx Virtual Host
+# Reverse Proxy + HLS DRM Streaming with secure_link + SSL/Certbot
+# ============================================================================
+
+# HTTP -> HTTPS Redirect
+server {
+    listen 80;
+    server_name courssat.online www.courssat.online api.courssat.online;
+
+    location = /nginx_status {
+        stub_status;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        access_log off;
+    }
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# Main HTTPS Server
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name courssat.online www.courssat.online;
+
+    ssl_certificate /etc/letsencrypt/live/courssat.online/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/courssat.online/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        limit_req zone=general burst=50 nodelay;
+        proxy_pass http://frontend_spa;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Video upload endpoints intentionally stream request bodies to Django.
+    # Each chunk is 8 MiB; 16 MiB leaves room for multipart overhead.
+    location ~ ^/api/v1/videos/(upload-chunk|upload-complete)/$ {
+        client_max_body_size 16M;
+        client_body_timeout 900s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
+        proxy_pass http://backend_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/ {
+        client_max_body_size 16M;
+        limit_req zone=api burst=30 nodelay;
+
+        # Preflight is answered at the edge so an unavailable backend cannot turn
+        # a valid CORS negotiation into a browser-visible 502.
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin $cors_allowed_origin always;
+            add_header Access-Control-Allow-Credentials "true" always;
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, Idempotency-Key, X-Correlation-Id" always;
+            add_header Access-Control-Max-Age "86400" always;
+            add_header Vary "Origin" always;
+            add_header Content-Length 0;
+            add_header Content-Type "text/plain; charset=utf-8";
+            return 204;
+        }
+
+        proxy_pass http://backend_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 60s;
+    }
+
+    location /admin/ {
+        client_max_body_size 12M;
+        proxy_pass http://backend_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ ^/hls/(?<hls_stream_id>[0-9]+)/(?<hls_asset>.+)$ {
+        limit_req zone=hls burst=200 nodelay;
+        secure_link $hls_token,$hls_expires;
+        secure_link_md5 "$hls_expires/hls/$hls_stream_id/${NGINX_SECURE_LINK_SECRET} $remote_addr";
+
+        if ($secure_link = "") {
+            return 403;
+        }
+        if ($secure_link = "0") {
+            return 410;
+        }
+
+        alias /var/www/courssat/media/hls/$hls_stream_id/$hls_asset;
+        add_header Set-Cookie "hls_token=$hls_token; Path=/hls/$hls_stream_id/; Max-Age=7200; Secure; HttpOnly; SameSite=Lax" always;
+        add_header Set-Cookie "hls_expires=$hls_expires; Path=/hls/$hls_stream_id/; Max-Age=7200; Secure; HttpOnly; SameSite=Lax" always;
+        add_header Access-Control-Allow-Origin $cors_allowed_origin always;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+
+        types {
+            application/vnd.apple.mpegurl m3u8;
+            video/mp2t ts;
+        }
+    }
+
+    location /static/ {
+        alias /var/www/courssat/static/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    location /media/ {
+        location /media/hls/ {
+            return 403;
+        }
+        location /media/scratch/ {
+            return 403;
+        }
+        alias /var/www/courssat/media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    location /grafana/ {
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        proxy_pass http://grafana:3000/;
+    }
+}
+
+# API Subdomain
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name api.courssat.online;
+
+    ssl_certificate /etc/letsencrypt/live/courssat.online/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/courssat.online/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Video upload endpoints: stream 8 MiB chunks directly to Django.
+    location ~ ^/api/v1/videos/(upload-chunk|upload-complete)/$ {
+        client_max_body_size 16M;
+        client_body_timeout 900s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
+        proxy_pass http://backend_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Media files (activation-code PDFs, thumbnails, ...) must be served by nginx.
+    # Django only serves /media/ when DEBUG=True, so without this block every
+    # https://api.courssat.online/media/... URL falls through to Django and returns
+    # its default "Not Found / The requested resource was not found on this server."
+    location /media/ {
+        location /media/hls/ {
+            return 403;
+        }
+        location /media/scratch/ {
+            return 403;
+        }
+        alias /var/www/courssat/media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    location / {
+        client_max_body_size 16M;
+        limit_req zone=api burst=30 nodelay;
+
+        # The API is intentionally CORS-enabled for only the canonical web origins.
+        # The backend remains the source of truth for normal response headers; this
+        # edge block only handles browser preflight negotiation.
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin $cors_allowed_origin always;
+            add_header Access-Control-Allow-Credentials "true" always;
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, Idempotency-Key, X-Correlation-Id" always;
+            add_header Access-Control-Max-Age "86400" always;
+            add_header Vary "Origin" always;
+            add_header Content-Length 0;
+            add_header Content-Type "text/plain; charset=utf-8";
+            return 204;
+        }
+
+        proxy_pass http://backend_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 60s;
+    }
+}

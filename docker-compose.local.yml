@@ -1,0 +1,121 @@
+name: courssat-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: courssat-local-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: edusmart
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - courssat-local-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d edusmart"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: courssat-local-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - courssat-local-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: courssat-local-backend
+    restart: unless-stopped
+    working_dir: /app
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until pg_isready -h postgres -p 5432 -U postgres >/dev/null 2>&1; do
+          echo "Waiting for PostgreSQL..."
+          sleep 2
+        done
+        python manage.py migrate --noinput
+        mkdir -p /app/media/scratch /app/media/hls /app/media/attachments /app/media/thumbnails
+        exec python manage.py runserver 0.0.0.0:8000
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      SECRET_KEY: local-only-secret-key-change-before-production
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      DB_NAME: edusmart
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CELERY_TASK_ALWAYS_EAGER: "True"
+      FRONTEND_URL: http://localhost:8080
+      FRONTEND_BASE_URL: http://localhost:8080
+      CORS_ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      NGINX_SECURE_LINK_SECRET: local-hls-secret
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/readiness/"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  frontend:
+    image: node:20-alpine
+    container_name: courssat-local-frontend
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      VITE_API_URL: http://localhost:8000/api/v1
+      VITE_APP_ENV: development
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -x node_modules/.bin/vite ]; then
+          npm ci --include=dev --prefer-offline --no-audit
+        fi
+        exec npm run dev -- --host 0.0.0.0
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Frontend:/app
+      - courssat-local-frontend-node-modules:/app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  courssat-local-postgres-data:
+  courssat-local-redis-data:
+  courssat-local-frontend-node-modules:

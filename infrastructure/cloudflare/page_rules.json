@@ -1,0 +1,60 @@
+{
+  "_comment": "Cloudflare Page Rules & Cache Rules for courssat.online",
+  "page_rules": [
+    {
+      "target": "courssat.online/static/*",
+      "actions": {
+        "cache_level": "cache_everything",
+        "edge_cache_ttl": 2592000,
+        "browser_cache_ttl": 2592000
+      }
+    },
+    {
+      "target": "courssat.online/assets/*",
+      "actions": {
+        "cache_level": "cache_everything",
+        "edge_cache_ttl": 31536000,
+        "browser_cache_ttl": 31536000
+      }
+    },
+    {
+      "target": "api.courssat.online/*",
+      "actions": {
+        "cache_level": "bypass",
+        "security_level": "high"
+      }
+    },
+    {
+      "target": "courssat.online/hls/*",
+      "actions": {
+        "cache_level": "bypass",
+        "security_level": "high"
+      }
+    },
+    {
+      "target": "courssat.online/api/*",
+      "actions": {
+        "cache_level": "bypass"
+      }
+    }
+  ],
+  "security": {
+    "ssl_mode": "full_strict",
+    "always_use_https": true,
+    "min_tls_version": "1.2",
+    "automatic_https_rewrites": true,
+    "browser_integrity_check": true,
+    "hotlink_protection": true
+  },
+  "performance": {
+    "auto_minify": {
+      "javascript": true,
+      "css": true,
+      "html": true
+    },
+    "brotli": true,
+    "early_hints": true,
+    "http2": true,
+    "http3": true
+  }
+}

@@ -1,0 +1,12 @@
+This directory is intentionally empty in git.
+The real nginx server config is rendered at container start by the official
+nginx:1.27-alpine image's docker-entrypoint envsubst templating, from
+infrastructure/nginx/templates/courssat.online.conf.template, into a tmpfs
+mount (see the `nginx` service in docker-compose.prod.yml: NGINX_ENVSUBST_*
+env vars + `tmpfs: /etc/nginx/generated`). It never touches disk and is never
+committed. A previous commit accidentally checked in a fully-rendered copy of
+this file with the real production HLS secure_link secret hardcoded in
+plaintext — that file has been removed from tracking. If you still have a
+bare-metal /etc/nginx/sites-available config from scripts/setup_server.sh's
+initial certbot bootstrap, replace it with the Docker-based nginx service
+once DNS/TLS are confirmed stable, so there's a single source of truth.

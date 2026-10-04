@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+    "**/migrations/*",
+    "**/tests/*",
+    ".venv"
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "DJ",  # flake8-django
+]
+ignore = [
+    "E501", # Line length (handled by formatter)
+    "S101", # Use of assert in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"apps/courses/views.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+disable_error_code = ["var-annotated", "import-untyped", "import-not-found"]
+exclude = ["migrations", "tests", "\\.venv"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.development"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.development"
+python_files = ["test_*.py", "*_test.py", "tests.py"]
+
+addopts = "--strict-markers --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing"

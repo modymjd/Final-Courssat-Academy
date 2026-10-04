@@ -1,0 +1,87 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['Backend/**']
+  pull_request:
+    branches: [main]
+    paths: ['Backend/**']
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_courssat
+          POSTGRES_USER: courssat
+          POSTGRES_PASSWORD: testpass
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U courssat -d test_courssat" --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7.2-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r Backend/requirements.txt
+
+      - name: Lint (Ruff)
+        run: cd Backend && ruff check .
+
+      - name: Type Check (Mypy)
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+        run: cd Backend && mypy . --ignore-missing-imports
+
+      - name: Run existing backend tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          DB_NAME: test_courssat
+          DB_USER: courssat
+          DB_PASSWORD: testpass
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          REDIS_URL: redis://localhost:6379/0
+          CELERY_BROKER_URL: redis://localhost:6379/1
+          CELERY_RESULT_BACKEND: redis://localhost:6379/2
+          CELERY_TASK_ALWAYS_EAGER: 'True'
+        run: cd Backend && python manage.py test --verbosity 2
+
+      - name: Run accounts test directory
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          DB_NAME: test_courssat
+          DB_USER: courssat
+          DB_PASSWORD: testpass
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          REDIS_URL: redis://localhost:6379/0
+          CELERY_BROKER_URL: redis://localhost:6379/1
+          CELERY_RESULT_BACKEND: redis://localhost:6379/2
+          CELERY_TASK_ALWAYS_EAGER: 'True'
+        run: cd Backend && python manage.py test apps/accounts/tests --verbosity 2
+
+      - name: Run assessments test directory
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          DB_NAME: test_courssat
+          DB_USER: courssat
+          DB_PASSWORD: testpass
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          REDIS_URL: redis://localhost:6379/0
+          CELERY_BROKER_URL: redis://localhost:6379/1
+          CELERY_RESULT_BACKEND: redis://localhost:6379/2
+          CELERY_TASK_ALWAYS_EAGER: 'True'
+        run: cd Backend && python manage.py test apps/assessments/tests --verbosity 2

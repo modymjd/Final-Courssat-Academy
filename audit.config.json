@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "projectName": "EduSmart Platform",
+  "version": "1.0.0",
+  "reportDir": "reports",
+  "paths": {
+    "backend": "Backend",
+    "frontend": "Frontend",
+    "venv": "Backend/.venv/Scripts"
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.venv/**",
+    "**/coverage/**",
+    "**/migrations/**"
+  ],
+  "tools": {
+    "ruff": { "enabled": true, "criticalOnFail": true },
+    "mypy": { "enabled": true, "criticalOnFail": false },
+    "bandit": { "enabled": true, "criticalOnFail": true },
+    "pipAudit": { "enabled": true, "criticalOnFail": true },
+    "frontendLint": { "enabled": true, "criticalOnFail": true },
+    "gitleaks": { "enabled": true, "criticalOnFail": true },
+    "semgrep": { "enabled": true, "criticalOnFail": false },
+    "trivy": { "enabled": true, "criticalOnFail": false }
+  },
+  "scoringWeights": {
+    "security": 40,
+    "quality": 30,
+    "types": 20,
+    "dependencies": 10
+  }
+}

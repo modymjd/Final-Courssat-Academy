@@ -1,0 +1,6 @@
+1) فك محتويات المجلد courssat-github-ready-hotfix داخل جذر المشروع ووافق على الاستبدال.
+2) افتح PowerShell داخل جذر المشروع.
+3) شغّل:
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\PUSH_TO_GITHUB.ps1
+السكربت لا يرفع .env.production أو المفاتيح أو قواعد البيانات أو node_modules.

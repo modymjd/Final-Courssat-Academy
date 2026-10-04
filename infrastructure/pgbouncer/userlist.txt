@@ -1,0 +1,6 @@
+; PgBouncer User List for Courssat Academy
+; Format: "username" "password"
+; NOTE: In production, use scram-sha-256 hashed passwords
+; Generate with: echo -n "md5$(echo -n 'passwordusername' | md5sum | cut -d ' ' -f1)"
+; Or use SCRAM-SHA-256 hashes from pg_shadow
+"courssat" "SCRAM-SHA-256$4096:REPLACE_WITH_SCRAM_HASH"
